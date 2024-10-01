@@ -1,0 +1,622 @@
+Add-Type -AssemblyName System.Windows.Forms
+
+# Define the default paths to the log files 
+
+$global:system_log = "C:\Windows\System32\winevt\Logs\System.evtx"
+
+$global:app_log = "C:\Windows\System32\winevt\Logs\Application.evtx"
+
+$global:security_log = "C:\Windows\System32\winevt\Logs\Security.evtx"  
+
+$global:setup_log = "C:\Windows\System32\winevt\Logs\Setup.evtx"
+
+$global:hardware_log = "C:\Windows\System32\winevt\Logs\HardwareEvents.evtx"  
+
+
+function main_menu {
+	Clear-Host
+    Write-Host "-------------------- Welcome to the Log analyser --------------------" -ForegroundColor Blue
+    Write-Host "Choose the log file to analyze : "
+	Write-Host " "
+    Write-Host " ------> 1 : System log `n `n ------> 2 : Application Log `n `n ------> 3 : Security Log `n `n ------> 4 : Setup Log `n `n ------> 5 : Hardware Log `n `n ------> 6 : Other `n `n ------> 7 : Quit `n "
+
+    $global:choice = Read-Host "Choice "
+
+    if ($global:choice -match "7"){
+		Clear-Host
+        exit 0
+    }
+}
+
+# function of the date menu and date inputing / checking
+function input_date{
+
+    # date menu structure
+	Clear-Host
+	Write-Host "----- DATE FILTERING -----" -BackgroundColor Blue
+	Write-Host " "
+	Write-Host "1 : With Date Range"
+	Write-Host " "
+	Write-Host "2 : No Date Range"
+	Write-Host " "
+	Write-Host "3 : return to main menu"
+	Write-Host " "
+
+	$d_choice = [String](Read-Host "Choice ")
+	
+	if ($d_choice -eq '2') {
+		$global:date = $d_choice
+		return
+	}
+	elseif ($d_choice -eq '3') {
+		Start-Sleep -Seconds 3
+		main
+	}
+	elseif ($d_choice -eq '1') {
+		$global:date = $d_choice
+	}
+	else{
+		Write-Host "Invalid input!" -ForegroundColor Red
+		Start-Sleep -Seconds 2
+		main
+	}
+
+	$StartDate = $null
+    $EndDate = $null
+	
+	do {
+		# check if the format is good if not keep prompting user to input date
+		try {
+			Clear-Host
+			$StartDateInput = Read-Host -prompt "enter a start date (Ex: 17/07/2017 or 17/07/2017 09:00:00) "
+			$StartDate = [datetime](Get-Date $StartDateInput)
+
+		}catch{
+			 Write-Host "Invalid date format! Please try again." -ForegroundColor Red
+			 Start-Sleep -Seconds 2
+			 $StartDate = $null
+		}
+
+	} while(!$StartDate)
+	
+	do {
+		# check if the format is good if not keep prompting user to input end date
+		try{
+			Clear-Host
+			$EndDateInput = Read-Host -prompt "enter an end date (Ex: 17/07/2017 or 17/07/2017 09:00:00) "
+			$EndDate = [datetime](Get-Date $EndDateInput)
+			
+			if ($EndDate -lt $StartDate) {
+				Write-Host ""
+				Write-Host "The inputed end date is before the start date." -BackgroundColor Red
+				Start-Sleep -Seconds 2
+				$EndDate = $null
+				
+			}
+
+		}catch{
+			Write-Host ""
+			Write-Host "Invalid date format! Please try again." -ForegroundColor Red 
+			$EndDate = $null
+			Start-Sleep -Seconds 2
+		}
+	
+	} while(!$EndDate)
+
+	return @{StartDate = $StartDate; EndDate = $EndDate}
+
+}
+
+
+function keyword_menu{
+	param(
+
+	)
+	Clear-Host
+	Write-Host "----- KEYWORD FILTERING -----" -BackgroundColor Blue
+	Write-Host " "
+	Write-Host "1 : Use keyword search"
+	Write-Host " "
+	Write-Host "2 : No "
+	Write-Host " "
+	Write-Host "3 : return to main menu"
+	Write-Host " "
+
+
+	$k_choice = [String](Read-Host "Choice ")
+	
+	if ($k_choice -eq '1') {
+		Clear-Host
+
+		$global:k_state = $k_choice
+		$keyword = Read-Host "Enter keyword or phrase "
+		return $keyword
+	}
+	elseif ($k_choice -eq '2') {
+		$global:k_state = $k_choice
+	}
+	elseif ($k_choice -eq '3') {
+		main
+	}
+	else{
+		Write-Host "Invalid input! " -ForegroundColor Red
+		Start-Sleep -Seconds 2
+		main
+	}
+
+}
+
+# Check if the word/phrase is in the log
+function keyword_search{
+	param(
+		$line,
+		$keyword
+	)
+	if ($line -match $keyword){
+		return "1"
+	}else{
+		return "2"
+	}
+}
+
+
+
+# function for the severuty menu + filter the logs by type
+
+function Analyze{
+
+	param(
+		[String]$filepath,
+		[String]$keyword
+	)
+		# Menu structure 
+		
+		Clear-Host
+		Write-Host "----- SEVERITY FILTERING -----" -BackgroundColor Blue
+		Write-Host " "
+		Write-Host "------> 1 : Every type"
+		Write-Host " "
+		Write-Host "------> 2 : Only Warnings"
+		Write-Host " "
+		Write-Host "------> 3 : Only Errors"
+		Write-Host " "
+		Write-Host "------> 4 : Only Informations"
+		Write-Host " "
+		Write-Host "------> 5 : Only Criticals"
+		Write-Host " "
+		Write-Host "------> 6 : Return to main menu"
+		Write-Host " "
+		$s_choice = Read-Host "Choice (seperate choices with spaces ex : 2 4 ) "
+
+		if ($s_choice -eq "1"){
+			uni_filter -log_path $filepath -choices $s_choice -keyword $keyword  
+		}
+		elseif ($s_choice -match "^\s*[2-5](\s*[2-5])*\s*$" ){   # Check if the user inputed a number of numbers between 2 and 5 seperated with spaces
+
+			multi_filter -log_path $filepath -choices $s_choice -keyword $keyword
+
+		}elseif ($s_choice -eq '6') {
+			main
+
+		}else {
+			Write-Host "Invalid input! Please try again " -BackgroundColor Red
+			Start-Sleep -Seconds 2
+			return 1
+		}
+		
+	
+}
+
+
+# HashTable to define function to execute depending on the option chosen
+
+$global:options = @{
+    "2" = { param($log,$keyword) calculate_warnings $log $keyword}
+    "3" = { param($log,$keyword) calculate_errors $log $keyword}
+    "4" = { param($log,$keyword) calculate_infos $log $keyword}
+    "5" = { param($log,$keyword) calculate_criticals $log $keyword}
+} 
+
+# Function to filter depending on the severity / severities chosen by the user
+function multi_filter {
+	param (
+		$log_path,
+		$choices,
+		$keyword
+	)
+	
+	foreach ($choice in ($choices -split '\s+')) {
+
+		if ($choice -match "^[2-5]$"){
+
+		Get-WinEvent -Path $log_path | ForEach-Object { 
+
+			if ($_.TimeCreated -lt $global:StartDate){  # check if the date of the current log in the loop is before the start date entered bu user ; this means we wont go through all of the log file which saves a lot of time
+				break
+			}
+			if ($global:date -eq "1") {               # check if the user wanted date filtering 
+
+				$d = [datetime]($_.TimeCreated)
+
+				if($d -ge $global:StartDate -and $d -le $global:endDate){  # Check if the current log date in the loop is between the start and end date chosen
+
+					&($options[$choice]) $_ $keyword  # Call the corresponding calculation function / functions to the choice / choices
+				}
+			}else {
+				
+				&($options[$choice]) $_ $keyword
+			}
+	}
+}
+	
+}
+}
+
+# Function to filter with all the severities 
+function uni_filter {
+	param (
+		$log_path,
+		$choices,
+		$keyword
+	)
+	Get-WinEvent -Path $log_path | ForEach-Object { 
+		if ($_.TimeCreated -lt $global:StartDate){  # check if the date of the current log in the loop is before the start date entered bu user ; this means we wont go through all of the log file which saves a lot of time
+			break
+		}
+		if ($global:date -eq "1") {               # check if user wanted date filtering 
+			$d = [datetime]($_.TimeCreated)
+			
+			if($d -ge $global:StartDate -and $d -le $global:endDate){
+				
+				calculate_errors $_ $keyword
+				calculate_criticals $_ $keyword
+				calculate_infos $_ $keyword
+				calculate_warnings $_ $keyword
+
+			}
+		}else {
+			calculate_errors $_ $keyword
+			calculate_criticals $_ $keyword
+			calculate_infos $_ $keyword
+			calculate_warnings $_ $keyword
+		}
+}
+
+}
+
+
+
+# functions to handle each type of log
+
+function calculate_errors {
+	param(
+		$line,
+		$keyword
+	)
+	if ($line.LevelDisplayName -match "Error" -or $line.LevelDisplayName -match "Erreur" ){  # match log type in french and english
+
+		if($global:k_state -eq "1"){  # check if user wanted keyword search
+
+			if ((keyword_search -line $line.Message -keyword $keyword) -eq "1"){ # Check if keyword/phrase is in the log
+				$global:errors += $line  
+				$global:error_count++
+			}
+
+		}else{
+			$global:errors += $line  
+			$global:error_count++
+		}	
+	
+	}
+}
+
+
+function calculate_warnings{
+	param(
+		$line,
+		$keyword
+	)
+	
+	if ($line.LevelDisplayName -match "Warning" -or $line.LevelDisplayName -match "Avertissement"){ # match log type in french and english
+
+		if($global:k_state -eq "1"){  # check if user wanted keyword search
+
+			if ((keyword_search -line $line.Message -keyword $keyword) -eq "1"){ # Check if keyword/phrase is in the log
+				$global:warning += $line
+				$global:warning_count++
+			}
+
+		}else{
+			$global:warning += $line
+			$global:warning_count++
+		}
+
+	}
+}
+
+function calculate_infos{
+	param(
+		$line,
+		$keyword
+	)
+	if ($line.LevelDisplayName -match "Information"){ # match log type in french and english
+		
+		if($global:k_state -eq "1"){  # check if user wanted keyword search
+
+			if ((keyword_search -line $line.Message -keyword $keyword) -eq "1"){ # Check if keyword/phrase is in the log
+				$global:info += $line
+				$global:info_count++
+			}
+
+		}else{
+			$global:info += $line
+			$global:info_count++
+		}
+	}
+}
+
+function calculate_criticals{
+	param(
+		$line,
+		$keyword
+	)
+	if ($line.LevelDisplayName -match "Critical" -or $line.LevelDisplayName -match "Critique") { # match log type in french and english
+
+		$global:critical += $line
+		$global:critical_count++
+
+		if($global:k_state -eq "1"){  # check if user wanted keyword search
+
+			if ((keyword_search -line $line.Message -keyword $keyword) -eq "1"){ # Check if keyword/phrase is in the log
+				$global:critical += $line
+				$global:critical_count++
+			}
+
+		}else{
+			$global:critical += $line
+			$global:critical_count++
+		}
+
+	}
+}
+
+
+# function to format / structure the output
+
+function Format-Log {
+    param (
+        [Parameter(Mandatory = $true)]
+        [object]$event
+    )
+    
+    return @"
+
+Provider Name  : $($event.ProviderName)
+
+Event ID       : $($event.Id)
+ 
+Level          : $($event.LevelDisplayName)
+
+Time Created   : $($event.TimeCreated)
+
+Message        : $($event.Message)
+
+      --                ---                --
+
+"@
+}
+
+function output_menu{
+	param(
+
+	)
+	Clear-Host
+	Write-Host "-------- OUTPUT --------" -BackgroundColor Blue
+	Write-Host " "
+	Write-Host "1 : Save to text file"
+	Write-Host " "
+	Write-Host "2 : output directly"
+	Write-Host " "
+	Write-Host "3 : return to main menu"
+	Write-Host " "
+
+	$o_choice = [String](Read-Host "Choice ")
+	
+	if ($o_choice -eq '1') {
+		Clear-Host
+
+		$filePath = Get-SaveFile  # Call the file explorer function to get the wanted file to save in
+
+		if ($filePath) {
+			Error_report $filePath   
+			Write-Host "Output saved to $filePath" -BackgroundColor Blue
+
+		} else {
+			Write-Host ""
+			Write-Host "Save cancelled." -BackgroundColor Red
+		}
+
+
+	}elseif ($o_choice -eq '2') {   # Output to the CMD directly
+
+		Write-Host "------------ WARNINGS ------------" -BackgroundColor Blue
+		$global:warning | ForEach-Object { Write-Host (Format-Log -event $_) }
+	
+		Write-Host "------------ ERRORS ------------"-BackgroundColor Blue
+		$global:errors | ForEach-Object { Write-Host (Format-Log -event $_) }
+	
+		Write-Host "------------ INFO ------------" -BackgroundColor Blue
+		$global:info | ForEach-Object { Write-Host (Format-Log -event $_) }
+	
+		Write-Host "------------ Critical ------------" -BackgroundColor Blue
+		$global:critical | ForEach-Object { Write-Host (Format-Log -event $_) }
+
+
+	}elseif ($o_choice -eq '3') {
+		main
+
+
+	}else{
+		Write-Host "Invalid input! " -ForegroundColor Red
+		Start-Sleep -Seconds 2
+		main
+	}
+}
+
+
+function Error_report{
+	param(
+		[String]$output_path
+	)
+	# outputing the errors by type in the output file
+	Clear-Host
+
+	"------------ WARNINGS ------------" | add-Content -Path $output_path
+	$global:warning | ForEach-Object { Format-Log -event $_ | Out-File -FilePath $output_path -Append -Encoding UTF8}
+
+	"------------ ERRORS ------------" | add-Content -Path $output_path
+	$global:errors | ForEach-Object { Format-Log -event $_ | Out-File -FilePath $output_path -Append -Encoding UTF8}
+
+	"------------ INFO ------------" | add-Content -Path $output_path
+	$global:info | ForEach-Object { Format-Log -event $_ | Out-File -FilePath $output_path -Append -Encoding UTF8}
+
+	"------------ Critical ------------" | add-Content -Path $output_path
+	$global:critical | ForEach-Object { Format-Log -event $_ | Out-File -FilePath $output_path -Append -Encoding UTF8}
+	
+	Write-Host "Analysis Complete!" -BackgroundColor Blue
+	Write-Host "Total criticals found : $global:critical_count" -ForegroundColor Green
+	Write-Host "Total warnings found : $global:warning_count" -ForegroundColor Green
+	Write-Host "Total errors found : $global:error_count" -ForegroundColor Green
+	Write-Host "Total infos found : $global:info_count" -ForegroundColor Green
+
+	Write-Host " "
+	
+
+}
+
+# Function to open File explorer and let user save to the txt file he wants
+
+function Get-SaveFile {
+    $dialog = New-Object System.Windows.Forms.SaveFileDialog
+    $dialog.Filter = "Text files (*.txt)|*.txt|All files (*.*)|*.*"
+    $dialog.Title = "Select where to save the output"
+    
+    # Show the Save File dialog and wait for user input
+    $result = $dialog.ShowDialog()
+
+    # If the user pressed "Save"
+    if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
+        return $dialog.FileName
+    } else {
+        return $null
+    }
+}
+
+
+
+function get_path {
+	do {
+		Clear-Host
+		$path = Read-Host "Enter path to the Log file (.evtx)"
+
+	}while (-not (Test-Path $path) -or -not (Test-Path $path -PathType Leaf)) # Check if log file exists 
+	return $path
+}
+
+
+
+function main {
+	$global:errors = @()
+	$global:warning = @()
+	$global:info = @()
+	$global:critical = @()
+
+	$global:error_count = 0
+	$global:warning_count = 0
+	$global:info_count = 0
+	$global:critical_count = 0
+
+	$global:date = $null  # variable that determines if user wants search with date range or not
+
+	$global:k_state = $null # variable that determines if user wants keyword search
+
+	$global:StartDate = $null
+
+	$global:EndDate = $null
+
+	$global:k_state = $null
+	$global:choice = $null
+	
+	$global:choice = $null
+    while(-not ($global:choice -match '^[1-7]$')) {
+		
+		try{
+        	main_menu
+		}catch {
+			Write-Host "Invalid input. Try again" -BackgroundColor Red
+		}
+
+    } 
+	$dateRange = input_date
+
+	$global:StartDate = $dateRange.StartDate
+	$global:EndDate = $dateRange.EndDate
+
+	$state = 0
+
+	$keyword = keyword_menu
+	
+	Switch ($global:choice) {
+		"1" {
+			do{
+			$state = Analyze -filepath $global:system_log -keyword $keyword
+			}while($state -eq 1)
+		}
+		"2"{
+			do{
+				$state = Analyze -filepath $global:app_log -keyword $keyword
+				}while($state -eq 1)
+		}
+		"3"{
+			do{
+				$state = Analyze -filepath $global:security_log -keyword $keyword
+				}while($state -eq 1)
+		}
+		"4"{
+			do{
+				$state = Analyze -filepath $global:setup_log -keyword $keyword
+				}while($state -eq 1)
+		}
+		"5"{
+			do{
+				$state = Analyze -filepath $global:hardware_log -keyword $keyword
+				}while($state -eq 1)
+		}
+		"6"{
+			$p = get_path
+			do{
+				$state = Analyze -filepath $p -keyword $keyword
+			}while($state -eq 1)
+		}
+	}
+	
+	output_menu
+	Write-Host ""
+	Write-Host " -----  quit (yes/no)  -----" -BackgroundColor Red
+	$q = Read-Host "-->"
+	if ($q -match "yes"){
+		exit(0)
+	}else{
+		Start-Sleep 1
+		main
+	}
+	
+}
+
+main
+
+
+
+
+
+
